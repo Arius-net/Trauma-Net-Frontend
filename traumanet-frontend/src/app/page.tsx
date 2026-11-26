@@ -2,28 +2,21 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Activity } from "lucide-react";
-import { homeRouteForRole, useAuth } from "@/lib/auth-context";
+import { Loader2 } from "lucide-react";
+import { homeForRole, useSession } from "@/lib/session";
 
 export default function HomePage() {
-  const { user, loading } = useAuth();
+  const { user, ready } = useSession();
   const router = useRouter();
 
   useEffect(() => {
-    if (loading) return;
-    if (!user) {
-      router.replace("/login");
-    } else {
-      router.replace(homeRouteForRole(user.rol));
-    }
-  }, [user, loading, router]);
+    if (!ready) return;
+    router.replace(user ? homeForRole(user.rol) : "/login");
+  }, [ready, user, router]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
-      <div className="flex items-center gap-3 text-sm font-medium text-slate-600 dark:text-slate-300">
-        <Activity className="h-5 w-5 animate-pulse text-cyan-600" />
-        Cargando TraumaNet...
-      </div>
+    <div className="flex min-h-screen items-center justify-center bg-app text-sm text-n-700">
+      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> Cargando TraumaNet…
     </div>
   );
 }
