@@ -1,257 +1,311 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import Link from "next/link";
+/**
+ * Expediente — detalle (Figma 17:473). GET /expedientes/{frap_id} (+ GET /network/hospitals para la clave).
+ */
 import { useParams } from "next/navigation";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  Database,
-  FileText,
-  HeartPulse,
-  Hospital,
-} from "lucide-react";
+import { Activity } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { hospitalLabel } from "@/components/hospital";
+import { QueryView } from "@/components/states";
 import {
-  DataVintageBadge,
-  EstadoFrapBadge,
-  EstadoViaBadge,
-  TriageBadge,
-} from "@/components/StatusBadges";
-import { api, ApiError, formatDateTime } from "@/lib/api";
-import { useAuth } from "@/lib/auth-context";
-import type { ExpedienteFRAPResponse } from "@/types/api";
+  Alert,
+  AvisoOficial,
+  Card,
+  DataRow,
+  PageHeader,
+  StatusBadge,
+  Table,
+  Td,
+  Th,
+  TriageText,
+} from "@/components/ui";
+import { api } from "@/lib/api";
+import { formatEta, formatFecha, formatHace, formatHora, formatNumero, formatRestante } from "@/lib/format";
+import {
+  INCIDENTE_LABEL,
+  MECANISMO_LABEL,
+  RECURSO_LABEL,
+  REGION_LABEL,
+  siNo,
+  VIA_LABEL,
+} from "@/lib/labels";
+import { useQuery } from "@/lib/useQuery";
+import type { FrapDocumento, PerfilClinico, TrasladoExpediente } from "@/types/api";
 
-export default function ExpedienteDetailPage() {
-  const { token } = useAuth();
+export default function ExpedienteDetallePage() {
+  return (
+    <AppShell roles={["CRUM", "JEFE_URGENCIAS", "PARAMEDICO"]}>
+      <Detalle />
+    </AppShell>
+  );
+}
+
+function Detalle() {
   const params = useParams<{ frap_id: string }>();
-  const frapId = params?.frap_id;
+  const frapId = decodeURIComponent(params.frap_id);
+  const q = useQuery(`expediente:${frapId}`, () => api.expediente(frapId));
+  const red = useQuery("red", () => api.networkHospitals());
+  const hosp = (id: number | undefined) => red.data?.hospitales.find((h) => h.hospital_id === id);
 
-  const [data, setData] = useState<ExpedienteFRAPResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!token || !frapId) return;
-    setLoading(true);
-    api
-      .getExpediente(token, frapId)
-      .then(setData)
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Error cargando expediente."))
-      .finally(() => setLoading(false));
-  }, [token, frapId]);
+  const f = q.data?.frap;
+  const subtitulo = f
+    ? [f.paciente_sintetico?.id_sintetico, f.tipo_incidente ? INCIDENTE_LABEL[f.tipo_incidente] : null]
+        .filter(Boolean)
+        .join(" · ")
+    : undefined;
 
   return (
-    <AppShell allowedRoles={["CRUM", "PARAMEDICO", "JEFE_URGENCIAS"]}>
-      <div className="space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Link
-            href="/expedientes"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-cyan-700 hover:underline dark:text-cyan-400"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Volver al listado de expedientes
-          </Link>
-          <span className="font-mono text-xs text-slate-500">FRAP ID: {frapId}</span>
-        </div>
-
-        {loading && (
-          <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">
-            Consultando expediente unificado (MongoDB + PostgreSQL)...
-          </div>
-        )}
-
-        {error && (
-          <div className="rounded-2xl border border-red-300 bg-red-50 p-6 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/60 dark:text-red-200">
-            {error}
-          </div>
-        )}
-
-        {data && (
-          <div className="grid gap-6 lg:grid-cols-12">
-            {/* Columna izquierda: Documento clínico completo (MongoDB) */}
-            <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 lg:col-span-7">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3 dark:border-slate-800">
-                <div className="flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-emerald-600" />
-                  <div>
-                    <h1 className="text-base font-bold text-slate-900 dark:text-white">
-                      Hoja FRAP — {data.frap.paciente_sintetico.id_sintetico}
-                    </h1>
-                    <div className="text-[11px] font-mono text-slate-500">
-                      Fuente de verdad: MongoDB · {data.frap.protocolo_codigo}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <TriageBadge nivel={data.frap.triage.nivel} />
-                  <EstadoFrapBadge estado={data.frap.estado_frap} />
-                </div>
+    <>
+      <PageHeader
+        title={
+          <>
+            Expediente <span className="font-mono text-[22px] font-semibold">{frapId}</span>
+          </>
+        }
+        subtitle={subtitulo}
+      />
+      <div className="flex flex-col gap-6 p-4 sm:p-6">
+        <QueryView query={q} skeletonCols={4} skeletonRows={8}>
+          {(data) => (
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+              <div className="flex min-w-0 flex-1 flex-col gap-6">
+                <PacienteCard f={data.frap} />
+                <SignosCard f={data.frap} />
+                {data.frap.perfil && <PerfilCard perfil={data.frap.perfil} />}
+                {(data.frap.medicamentos_aplicados?.length || data.frap.notas) && <NotasCard f={data.frap} />}
               </div>
-
-              {data.frap.motivo_sin_asignacion && (
-                <div className="flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-900 dark:border-red-800 dark:bg-red-950/50 dark:text-red-200">
-                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                  <div>
-                    <strong>Motivo sin_asignacion:</strong> {data.frap.motivo_sin_asignacion}
-                  </div>
-                </div>
-              )}
-
-              <div className="grid gap-3 sm:grid-cols-3 text-xs">
-                <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/60">
-                  <div className="text-[10px] font-semibold uppercase text-slate-500">Paciente Sintético</div>
-                  <div className="mt-1 font-semibold">
-                    Sexo: {data.frap.paciente_sintetico.sexo} · {data.frap.paciente_sintetico.grupo_edad}
-                  </div>
-                </div>
-                <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/60">
-                  <div className="text-[10px] font-semibold uppercase text-slate-500">Ubicación Escena</div>
-                  <div className="mt-1 font-semibold">{data.frap.ubicacion_escena.municipio}</div>
-                  <div className="font-mono text-[10px] text-slate-500">
-                    {data.frap.ubicacion_escena.latitud}, {data.frap.ubicacion_escena.longitud}
-                  </div>
-                </div>
-                <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/60">
-                  <div className="text-[10px] font-semibold uppercase text-slate-500">Creado</div>
-                  <div className="mt-1 font-mono text-[11px]">{formatDateTime(data.frap.creado_en)}</div>
-                </div>
+              <div className="flex flex-col gap-6 lg:w-[440px] lg:shrink-0">
+                {data.traslado ? (
+                  <>
+                    <TrasladoCard
+                      t={data.traslado}
+                      estadoFrap={data.frap.estado_frap}
+                      label={hospitalLabel(hosp(data.traslado.hospital_destino_id), data.traslado.hospital_destino_nombre)}
+                    />
+                    <ReservasTrasladoCard t={data.traslado} />
+                  </>
+                ) : (
+                  <SinTraslado f={data.frap} />
+                )}
               </div>
-
-              {/* Signos vitales seriados */}
-              <div>
-                <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-500">
-                  <HeartPulse className="h-4 w-4 text-red-500" />
-                  Signos Vitales Seriados ({data.frap.signos_vitales.length})
-                </h2>
-                <div className="mt-2 overflow-x-auto">
-                  <table className="w-full text-left font-mono text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-[10px] text-slate-500 dark:border-slate-800">
-                        <th className="py-1.5 pr-3">Hora</th>
-                        <th className="py-1.5 pr-3">FC</th>
-                        <th className="py-1.5 pr-3">FR</th>
-                        <th className="py-1.5 pr-3">TA</th>
-                        <th className="py-1.5">SpO2</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {data.frap.signos_vitales.map((sv, idx) => (
-                        <tr key={idx}>
-                          <td className="py-1.5 pr-3 text-[11px]">{formatDateTime(sv.medido_en)}</td>
-                          <td className="py-1.5 pr-3">{sv.fc} lpm</td>
-                          <td className="py-1.5 pr-3">{sv.fr} rpm</td>
-                          <td className="py-1.5 pr-3">
-                            {sv.ta_sistolica}/{sv.ta_diastolica}
-                          </td>
-                          <td className="py-1.5">{sv.spo2}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Subdocumento polimórfico */}
-              <div>
-                <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                  Subdocumento Clínico Flexible ({data.frap.tipo_incidente})
-                </h2>
-                <pre className="mt-2 overflow-x-auto rounded-xl border border-slate-200 bg-slate-950 p-3.5 font-mono text-xs text-cyan-200 dark:border-slate-800">
-                  {JSON.stringify(data.frap.perfil, null, 2)}
-                </pre>
-              </div>
-
-              {data.frap.notas && (
-                <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
-                  <strong>Notas:</strong> {data.frap.notas}
-                </div>
-              )}
-            </section>
-
-            {/* Columna derecha: Traslado y reservas atómicas (PostgreSQL) */}
-            <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 lg:col-span-5">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
-                <div className="flex items-center gap-2">
-                  <Hospital className="h-5 w-5 text-cyan-600" />
-                  <div>
-                    <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                      Traslado y Reservas ACID
-                    </h2>
-                    <div className="text-[11px] font-mono text-slate-500">
-                      Fuente de verdad: PostgreSQL
-                    </div>
-                  </div>
-                </div>
-                <Database className="h-4 w-4 text-slate-400" />
-              </div>
-
-              {!data.traslado ? (
-                <div className="rounded-xl border border-dashed border-amber-400 bg-amber-50/50 p-6 text-center text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-                  Este FRAP no tiene un traslado vinculado en PostgreSQL (estado actual:{" "}
-                  <strong>{data.frap.estado_frap}</strong>).
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="rounded-xl border border-cyan-200 bg-cyan-50/50 p-4 dark:border-cyan-900 dark:bg-cyan-950/30">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold uppercase text-cyan-700 dark:text-cyan-400">
-                        HOSP-0{data.traslado.hospital_destino_id}
-                      </span>
-                      {data.traslado.estado_via && <EstadoViaBadge estado={data.traslado.estado_via} />}
-                    </div>
-                    <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
-                      {data.traslado.hospital_destino_nombre}
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                      <span className="rounded bg-white px-2 py-0.5 font-semibold uppercase dark:bg-slate-900">
-                        Traslado: {data.traslado.estado}
-                      </span>
-                      {data.traslado.eta_min != null && (
-                        <span className="rounded bg-white px-2 py-0.5 font-mono dark:bg-slate-900">
-                          ETA {data.traslado.eta_min} ± {data.traslado.eta_margen_min ?? 0} min
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-2.5">
-                      <DataVintageBadge iso={data.traslado.data_vintage} label="Vintage decisión" />
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                      Bitácora de Reservas ({data.traslado.reservas.length})
-                    </h3>
-                    <div className="mt-2 space-y-2">
-                      {data.traslado.reservas.map((r) => (
-                        <div
-                          key={r.reserva_id}
-                          className="rounded-xl border border-slate-200 p-3 text-xs dark:border-slate-700"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono font-bold text-slate-900 dark:text-white">
-                              {r.tipo_recurso} × {r.cantidad}
-                            </span>
-                            <span className="rounded bg-slate-100 px-2 py-0.5 font-semibold uppercase dark:bg-slate-800">
-                              {r.estado}
-                            </span>
-                          </div>
-                          <div className="mt-1.5 space-y-0.5 font-mono text-[11px] text-slate-500">
-                            <div>ID: {r.reserva_id}</div>
-                            <div>Creada: {formatDateTime(r.creada_en)}</div>
-                            <div>Expira (TTL): {formatDateTime(r.expira_en)}</div>
-                            {r.cerrada_en && <div>Cerrada: {formatDateTime(r.cerrada_en)}</div>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </section>
-          </div>
-        )}
+            </div>
+          )}
+        </QueryView>
+        <AvisoOficial />
       </div>
-    </AppShell>
+    </>
+  );
+}
+
+function PacienteCard({ f }: { f: FrapDocumento }) {
+  const p = f.paciente_sintetico;
+  const u = f.ubicacion_escena;
+  return (
+    <Card title="Paciente y escena">
+      <dl className="-mt-2">
+        <DataRow label="ID sintético">
+          <span className="font-mono">{p?.id_sintetico ?? "—"}</span>
+        </DataRow>
+        <DataRow label="Sexo / grupo de edad">
+          {p ? `${p.sexo} · ${p.grupo_edad.replace("_", " ")}` : "—"}
+        </DataRow>
+        <DataRow label="Municipio">{u?.municipio ?? "—"}</DataRow>
+        <DataRow label="Latitud, longitud">
+          <span className="font-mono">{u ? `${u.latitud.toFixed(4)}, ${u.longitud.toFixed(4)}` : "—"}</span>
+        </DataRow>
+        <DataRow label="Tramo">
+          <span className="font-mono">{u?.tramo_id || "—"}</span>
+        </DataRow>
+        <DataRow label="Referencia">{u?.referencia || "—"}</DataRow>
+        <DataRow label="Ambulancia">{f.ambulancia_id ?? "—"}</DataRow>
+        <DataRow label="Creado">{formatFecha(f.creado_en)}</DataRow>
+      </dl>
+    </Card>
+  );
+}
+
+function SignosCard({ f }: { f: FrapDocumento }) {
+  const sv = f.signos_vitales ?? [];
+  return (
+    <Card title="Triage y signos vitales" actions={<TriageText nivel={f.triage?.nivel} withPrefix className="text-sm" />}>
+      {f.triage?.observaciones && <p className="text-sm text-n-700">{f.triage.observaciones}</p>}
+      <Table label="Signos vitales">
+        <thead>
+          <tr>
+            <Th>Medido</Th>
+            <Th numeric>FC</Th>
+            <Th numeric>FR</Th>
+            <Th numeric>TA</Th>
+            <Th numeric>SpO₂</Th>
+            <Th numeric>Temp.</Th>
+            <Th numeric>Glucosa</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {sv.map((s, i) => (
+            <tr key={i}>
+              <Td>{formatHora(s.medido_en)}</Td>
+              <Td numeric>{s.fc}</Td>
+              <Td numeric>{s.fr}</Td>
+              <Td numeric>
+                {s.ta_sistolica}/{s.ta_diastolica}
+              </Td>
+              <Td numeric>{s.spo2} %</Td>
+              <Td numeric>{formatNumero(s.temperatura_c, " °C")}</Td>
+              <Td numeric>{formatNumero(s.glucosa_mgdl, " mg/dL")}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </Card>
+  );
+}
+
+function PerfilCard({ perfil }: { perfil: PerfilClinico }) {
+  let filas: [string, React.ReactNode][] = [];
+  switch (perfil.tipo) {
+    case "politrauma":
+      filas = [
+        ["Mecanismo", MECANISMO_LABEL[perfil.mecanismo_lesion] ?? perfil.mecanismo_lesion],
+        ["Hemorragia activa", siNo(perfil.hemorragia_activa)],
+        ["Torniquete aplicado", siNo(perfil.torniquete_aplicado)],
+        ["Quirófano sospechado", siNo(perfil.requiere_quirofano_sospechado)],
+        ["ISS estimado", perfil.iss_estimado ?? "—"],
+        [
+          "Lesiones",
+          perfil.lesiones
+            .map((l) => `${REGION_LABEL[l.region] ?? l.region} · ${l.tipo_lesion} (AIS ${l.ais})`)
+            .join(" · "),
+        ],
+      ];
+      break;
+    case "infarto_agudo":
+      filas = [
+        ["Elevación del ST", siNo(perfil.ecg.elevacion_st)],
+        ["Derivaciones afectadas", perfil.ecg.derivaciones_afectadas.join(", ") || "—"],
+        ["Ritmo", perfil.ecg.ritmo?.replaceAll("_", " ") ?? "—"],
+        ["Killip", perfil.killip],
+        ["Inicio del dolor", `${perfil.inicio_dolor_min} min`],
+        ["Trombólisis aplicada", siNo(perfil.trombolisis_aplicada)],
+        ["Troponina rápida positiva", siNo(perfil.troponina_rapida_positiva)],
+      ];
+      break;
+    case "trauma_craneoencefalico":
+      filas = [
+        [
+          "Glasgow",
+          `${perfil.glasgow.total} (O${perfil.glasgow.ocular} V${perfil.glasgow.verbal} M${perfil.glasgow.motor})`,
+        ],
+        ["Pupilas (izq. / der.)", `${perfil.pupilas.izquierda_mm} mm / ${perfil.pupilas.derecha_mm} mm`],
+        ["Pupilas reactivas", siNo(perfil.pupilas.reactivas)],
+        ["Signos de herniación", siNo(perfil.signos_herniacion)],
+        ["Vía aérea asegurada", siNo(perfil.via_aerea_asegurada)],
+        ["Anticoagulado", siNo(perfil.anticoagulado)],
+        ["Convulsiones", siNo(perfil.convulsiones)],
+      ];
+      break;
+    case "intoxicacion_quemaduras":
+      filas = [
+        ["Subtipo", perfil.subtipo],
+        ["Agente", perfil.agente || "—"],
+        ["Vía de exposición", perfil.via_exposicion ?? "—"],
+        ["SCT quemada", perfil.sct_quemada_pct != null ? `${perfil.sct_quemada_pct} %` : "—"],
+        ["Grado de quemadura", perfil.grado_quemadura ?? "—"],
+        ["Lesión inhalatoria", siNo(perfil.lesion_inhalatoria)],
+        ["Vía aérea comprometida", siNo(perfil.via_aerea_comprometida)],
+        ["Descontaminación realizada", siNo(perfil.descontaminacion_realizada)],
+        ["Antídoto aplicado", perfil.antidoto_aplicado || "—"],
+      ];
+      break;
+  }
+  return (
+    <Card title={`Perfil clínico · ${INCIDENTE_LABEL[perfil.tipo].toLowerCase()}`}>
+      <dl className="-mt-2">
+        {filas.map(([k, v]) => (
+          <DataRow key={k} label={k}>
+            {v}
+          </DataRow>
+        ))}
+      </dl>
+    </Card>
+  );
+}
+
+function NotasCard({ f }: { f: FrapDocumento }) {
+  return (
+    <Card title="Medicamentos y notas">
+      <dl className="-mt-2">
+        {(f.medicamentos_aplicados ?? []).map((m, i) => (
+          <DataRow key={i} label={`${m.nombre} · ${m.via}`}>
+            {m.dosis} · {formatHora(m.aplicado_en)}
+          </DataRow>
+        ))}
+      </dl>
+      {f.notas && <p className="whitespace-pre-wrap text-sm text-n-900">{f.notas}</p>}
+    </Card>
+  );
+}
+
+function TrasladoCard({ t, estadoFrap, label }: { t: TrasladoExpediente; estadoFrap?: string; label: string }) {
+  return (
+    <Card title="Traslado (PostgreSQL)" actions={estadoFrap ? <StatusBadge>{estadoFrap}</StatusBadge> : undefined}>
+      <p className="-mt-1 text-base font-semibold text-link">{label}</p>
+      <dl className="-mt-2">
+        <DataRow label="Estado del traslado">{t.estado}</DataRow>
+        <DataRow label="Protocolo">
+          <span className="font-mono">{t.protocolo_codigo}</span>
+        </DataRow>
+        <DataRow label="ETA ± margen">{formatEta(t.eta_min, t.eta_margen_min)}</DataRow>
+        <DataRow label="Ambulancia">{t.ambulancia_id ?? "—"}</DataRow>
+        <DataRow label="Dato de capacidad">{formatHace(t.data_vintage)}</DataRow>
+      </dl>
+      {t.estado_via && (
+        <p className="flex items-center gap-2 text-xs text-n-900">
+          Estado de la vía al calcular: <StatusBadge>{VIA_LABEL[t.estado_via] ?? t.estado_via}</StatusBadge>
+        </p>
+      )}
+    </Card>
+  );
+}
+
+function ReservasTrasladoCard({ t }: { t: TrasladoExpediente }) {
+  return (
+    <Card title="Reservas del traslado">
+      {t.reservas.length === 0 && <p className="text-sm text-n-700">El traslado no tiene reservas registradas.</p>}
+      {t.reservas.map((r) => (
+        <dl key={r.reserva_id} className="-mt-2">
+          <DataRow label="Recurso">
+            {RECURSO_LABEL[r.tipo_recurso] ?? r.tipo_recurso} × {r.cantidad}
+          </DataRow>
+          <DataRow label="Estado">{r.estado}</DataRow>
+          <DataRow label="Creada">{formatFecha(r.creada_en)}</DataRow>
+          <DataRow label={r.estado === "activa" ? "Expira" : "Cerrada"}>
+            {r.estado === "activa"
+              ? `${formatHora(r.expira_en)} (${formatRestante(r.expira_en)})`
+              : formatFecha(r.cerrada_en)}
+          </DataRow>
+        </dl>
+      ))}
+    </Card>
+  );
+}
+
+function SinTraslado({ f }: { f: FrapDocumento }) {
+  return (
+    <>
+      <Card title="Traslado" actions={f.estado_frap ? <StatusBadge>{f.estado_frap}</StatusBadge> : undefined}>
+        {f.motivo_sin_asignacion ? (
+          <dl className="-mt-2">
+            <DataRow label="Motivo">{f.motivo_sin_asignacion}</DataRow>
+          </dl>
+        ) : (
+          <p className="text-sm text-n-700">Este FRAP no tiene traslado registrado.</p>
+        )}
+      </Card>
+      <Alert icon={<Activity className="size-5" aria-hidden />} title="El FRAP no tiene traslado">
+        En estado sin_asignacion no existe traslado ni reservas. El CRUM debe intervenir para coordinar el destino.
+      </Alert>
+    </>
   );
 }

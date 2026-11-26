@@ -1,181 +1,146 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+/**
+ * Expedientes — lista (Figma 17:268). GET /expedientes?estado_frap&tipo_incidente&limit
+ * Sin búsqueda por texto ni paginación: la API solo filtra por estado, tipo y límite.
+ */
 import Link from "next/link";
-import { AlertCircle, ExternalLink, FileText, Filter, RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { EstadoFrapBadge, TriageBadge } from "@/components/StatusBadges";
-import { api, ApiError, formatDateTime } from "@/lib/api";
-import { useAuth } from "@/lib/auth-context";
-import type { FrapListItem } from "@/types/api";
+import { EmptyState, QueryView } from "@/components/states";
+import { AvisoOficial, Field, PageHeader, Select, StatusBadge, Table, Td, Th, TriageText } from "@/components/ui";
+import { api } from "@/lib/api";
+import { formatFecha } from "@/lib/format";
+import { ESTADOS_FRAP, INCIDENTE_LABEL, TIPOS_INCIDENTE } from "@/lib/labels";
+import { useQuery } from "@/lib/useQuery";
+import type { EstadoFrap, TipoIncidente } from "@/types/api";
 
-export default function ExpedientesListPage() {
-  const { token } = useAuth();
-  const [items, setItems] = useState<FrapListItem[]>([]);
-  const [estadoFilter, setEstadoFilter] = useState<string>("");
-  const [tipoFilter, setTipoFilter] = useState<string>("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+const LIMITES = [10, 25, 50, 100, 200];
 
-  const loadList = useCallback(async () => {
-    if (!token) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await api.listExpedientes(token, {
-        estado_frap: estadoFilter || undefined,
-        tipo_incidente: tipoFilter || undefined,
-      });
-      setItems(data);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Error cargando expedientes FRAP.");
-    } finally {
-      setLoading(false);
-    }
-  }, [token, estadoFilter, tipoFilter]);
+export default function ExpedientesPage() {
+  return (
+    <AppShell roles={["CRUM", "JEFE_URGENCIAS", "PARAMEDICO"]}>
+      <Lista />
+    </AppShell>
+  );
+}
 
-  useEffect(() => {
-    loadList();
-  }, [loadList]);
+function Lista() {
+  const router = useRouter();
+  const [estado, setEstado] = useState<EstadoFrap | "">("");
+  const [tipo, setTipo] = useState<TipoIncidente | "">("");
+  const [limit, setLimit] = useState(50);
+
+  const q = useQuery(`exp:${estado}:${tipo}:${limit}`, () =>
+    api.expedientes({ estado_frap: estado || undefined, tipo_incidente: tipo || undefined, limit })
+  );
 
   return (
-    <AppShell allowedRoles={["CRUM", "PARAMEDICO", "JEFE_URGENCIAS"]}>
-      <div className="space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-              Expedientes Clínicos FRAP (MongoDB + PostgreSQL)
-            </h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Filtra por estado (incluyendo <code className="font-mono">sin_asignacion</code>) o perfil clínico, y abre el detalle unificado.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={loadList}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-            Actualizar
-          </button>
+    <>
+      <PageHeader title="Expedientes" subtitle="FRAP registrados (MongoDB)" />
+      <div className="flex flex-col gap-6 p-4 sm:p-6">
+        <div className="grid gap-4 md:grid-cols-3">
+          <Field label="Estado del FRAP" help="reportado · evaluando · asignado · sin_asignacion · cerrado">
+            {({ id, describedBy }) => (
+              <Select
+                id={id}
+                aria-describedby={describedBy}
+                value={estado}
+                onChange={(e) => setEstado(e.target.value as EstadoFrap | "")}
+              >
+                <option value="">Todos</option>
+                {ESTADOS_FRAP.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label="Tipo de incidente" help="politrauma · infarto_agudo · trauma_craneoencefalico · intoxicacion_quemaduras">
+            {({ id, describedBy }) => (
+              <Select
+                id={id}
+                aria-describedby={describedBy}
+                value={tipo}
+                onChange={(e) => setTipo(e.target.value as TipoIncidente | "")}
+              >
+                <option value="">Todos</option>
+                {TIPOS_INCIDENTE.map((t) => (
+                  <option key={t} value={t}>
+                    {INCIDENTE_LABEL[t]}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label="Límite" help="1 a 200 registros">
+            {({ id, describedBy }) => (
+              <Select id={id} aria-describedby={describedBy} value={limit} onChange={(e) => setLimit(Number(e.target.value))}>
+                {LIMITES.map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
         </div>
 
-        {/* Barra de filtros */}
-        <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 pb-2">
-            <Filter className="h-4 w-4 text-cyan-600" />
-            Filtros:
-          </div>
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500">Estado FRAP</label>
-            <select
-              value={estadoFilter}
-              onChange={(e) => setEstadoFilter(e.target.value)}
-              className="mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-950"
-            >
-              <option value="">Todos los estados</option>
-              <option value="sin_asignacion">sin_asignacion (Atención CRUM)</option>
-              <option value="asignado">asignado</option>
-              <option value="evaluando">evaluando</option>
-              <option value="reportado">reportado</option>
-              <option value="cerrado">cerrado</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500">Perfil Clínico</label>
-            <select
-              value={tipoFilter}
-              onChange={(e) => setTipoFilter(e.target.value)}
-              className="mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-950"
-            >
-              <option value="">Todos los perfiles</option>
-              <option value="politrauma">politrauma</option>
-              <option value="infarto_agudo">infarto_agudo</option>
-              <option value="trauma_craneoencefalico">trauma_craneoencefalico</option>
-              <option value="intoxicacion_quemaduras">intoxicacion_quemaduras</option>
-            </select>
-          </div>
-          <div className="ml-auto text-xs font-mono text-slate-500 pb-1.5">
-            {items.length} expediente(s)
-          </div>
-        </div>
-
-        {error && (
-          <div className="flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 p-4 text-xs text-red-800 dark:border-red-800 dark:bg-red-950/60 dark:text-red-200">
-            <AlertCircle className="h-4 w-4" />
-            {error}
-          </div>
-        )}
-
-        {/* Tabla de expedientes */}
-        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
-                <th className="px-4 py-3">FRAP / Paciente Sintético</th>
-                <th className="px-4 py-3">Perfil / Protocolo</th>
-                <th className="px-4 py-3">Triage</th>
-                <th className="px-4 py-3">Estado</th>
-                <th className="px-4 py-3">Escena / Destino</th>
-                <th className="px-4 py-3">Creado</th>
-                <th className="px-4 py-3 text-right">Detalle</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {items.map((f) => (
-                <tr key={f.frap_id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
-                  <td className="px-4 py-3">
-                    <div className="font-mono font-bold text-slate-900 dark:text-white">
-                      {f.paciente_sintetico.id_sintetico}
-                    </div>
-                    <div className="font-mono text-[11px] text-slate-400">{f.frap_id}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="font-semibold text-slate-800 dark:text-slate-200">{f.tipo_incidente}</div>
-                    <div className="font-mono text-[11px] text-cyan-700 dark:text-cyan-400">{f.protocolo_codigo}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <TriageBadge nivel={f.triage.nivel} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <EstadoFrapBadge estado={f.estado_frap} />
-                    {f.motivo_sin_asignacion && (
-                      <div className="mt-1 max-w-xs truncate text-[11px] text-red-600 dark:text-red-400">
-                        {f.motivo_sin_asignacion}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="text-slate-800 dark:text-slate-200">{f.ubicacion_escena.municipio}</div>
-                    <div className="font-mono text-[11px] text-slate-500">
-                      {f.hospital_destino_id ? `Destino: HOSP-0${f.hospital_destino_id}` : "Sin hospital asignado"}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-[11px] text-slate-500">
-                    {formatDateTime(f.creado_en)}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/expedientes/${f.frap_id}`}
-                      className="inline-flex items-center gap-1 rounded-lg bg-cyan-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-cyan-700"
+        <QueryView query={q} skeletonCols={6} skeletonRows={6}>
+          {(data) =>
+            data.length === 0 ? (
+              <EmptyState>Sin expedientes con estos filtros.</EmptyState>
+            ) : (
+              <Table label="Expedientes FRAP">
+                <thead>
+                  <tr>
+                    <Th>FRAP</Th>
+                    <Th>Paciente sintético</Th>
+                    <Th>Tipo de incidente</Th>
+                    <Th>Triage</Th>
+                    <Th>Estado FRAP</Th>
+                    <Th>Creado</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map((f) => (
+                    <tr
+                      key={f.frap_id}
+                      className="cursor-pointer hover:bg-selected"
+                      onClick={() => router.push(`/expedientes/${f.frap_id}`)}
                     >
-                      <FileText className="h-3.5 w-3.5" />
-                      Abrir <ExternalLink className="h-3 w-3" />
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-              {!loading && items.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
-                    No se encontraron expedientes FRAP con los filtros seleccionados.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                      <Td mono>
+                        <Link
+                          href={`/expedientes/${f.frap_id}`}
+                          className="text-n-900 underline-offset-2 hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {f.frap_id}
+                        </Link>
+                      </Td>
+                      <Td mono>{f.paciente_sintetico?.id_sintetico ?? "—"}</Td>
+                      <Td>{f.tipo_incidente ? INCIDENTE_LABEL[f.tipo_incidente] ?? f.tipo_incidente : "—"}</Td>
+                      <Td>
+                        <TriageText nivel={f.triage?.nivel} />
+                      </Td>
+                      <Td>{f.estado_frap ? <StatusBadge>{f.estado_frap}</StatusBadge> : "—"}</Td>
+                      <Td className="whitespace-nowrap">{formatFecha(f.creado_en)}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )
+          }
+        </QueryView>
+
+        <p className="text-xs text-n-700">
+          La API devuelve hasta el límite elegido y filtra solo por estado y tipo de incidente; no hay búsqueda por texto
+          ni paginación. El hospital destino y el ETA se ven al abrir el expediente.
+        </p>
+        <AvisoOficial />
       </div>
-    </AppShell>
+    </>
   );
 }

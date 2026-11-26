@@ -1,192 +1,131 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+/**
+ * Layout con barra superior azul marino de 56 px y guard de rutas por rol.
+ * CRUM: Consola CRUM, Panel de urgencias, Expedientes. Jefe: Panel de urgencias, Expedientes.
+ * Paramédico: barra sin pestañas (logo + usuario) y el asistente.
+ */
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  Activity,
-  AlertTriangle,
-  Ambulance,
-  Building2,
-  Database,
-  FileText,
-  LogOut,
-  Moon,
-  Network,
-  Sun,
-} from "lucide-react";
-import { api } from "@/lib/api";
-import { useAuth } from "@/lib/auth-context";
-import type { HealthResponse, UserRole } from "@/types/api";
+import { useEffect } from "react";
+import { Loader2 } from "lucide-react";
+import { homeForRole, useSession } from "@/lib/session";
+import { ROL_LABEL } from "@/lib/labels";
+import { cx } from "@/components/ui";
+import type { Rol } from "@/types/api";
 
-interface NavItem {
-  href: string;
-  label: string;
-  roles: UserRole[];
-  icon: React.ComponentType<{ className?: string }>;
-}
-
-const NAV_ITEMS: NavItem[] = [
-  { href: "/crum", label: "Consola CRUM y Red", roles: ["CRUM"], icon: Network },
-  { href: "/paramedico", label: "Captura FRAP", roles: ["PARAMEDICO", "CRUM"], icon: Ambulance },
-  { href: "/urgencias", label: "Panel Urgencias", roles: ["JEFE_URGENCIAS", "CRUM"], icon: Building2 },
-  { href: "/expedientes", label: "Expedientes", roles: ["CRUM", "PARAMEDICO", "JEFE_URGENCIAS"], icon: FileText },
+const TABS: { href: string; label: string; roles: Rol[] }[] = [
+  { href: "/crum", label: "Consola CRUM", roles: ["CRUM"] },
+  { href: "/urgencias", label: "Panel de urgencias", roles: ["CRUM", "JEFE_URGENCIAS"] },
+  { href: "/expedientes", label: "Expedientes", roles: ["CRUM", "JEFE_URGENCIAS"] },
 ];
 
+export function Logo({ className }: { className?: string }) {
+  return <span aria-hidden className={cx("block size-6 shrink-0 rounded-sm bg-accent", className)} />;
+}
+
 export function AppShell({
+  roles,
   children,
-  allowedRoles,
+  narrow = false,
 }: {
+  roles: Rol[];
   children: React.ReactNode;
-  allowedRoles?: UserRole[];
+  /** Columna centrada (asistente y resultados del paramédico). */
+  narrow?: boolean;
 }) {
-  const { user, loading, darkMode, toggleDarkMode, logout } = useAuth();
-  const pathname = usePathname();
+  const { user, ready, logout } = useSession();
   const router = useRouter();
-  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const pathname = usePathname();
+
+  const allowed = !!user && roles.includes(user.rol);
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.replace("/login");
-    }
-  }, [loading, user, router]);
+    if (!ready) return;
+    if (!user) router.replace("/login");
+    else if (!roles.includes(user.rol)) router.replace(homeForRole(user.rol));
+  }, [ready, user, roles, router]);
 
-  useEffect(() => {
-    api.health().then(setHealth).catch(() => setHealth(null));
-  }, []);
-
-  if (loading) {
+  if (!ready || !allowed) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
-        <div className="flex items-center gap-3 text-sm font-medium text-slate-600 dark:text-slate-300">
-          <Activity className="h-5 w-5 animate-pulse text-cyan-600" />
-          Verificando sesión JWT de TraumaNet...
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-app text-sm text-n-700">
+        <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> Cargando TraumaNet…
       </div>
     );
   }
 
-  if (!user) return null;
-
-  const forbidden = allowedRoles && !allowedRoles.includes(user.rol);
+  const tabs = TABS.filter((t) => t.roles.includes(user.rol));
+  const isParamedico = user.rol === "PARAMEDICO";
+  const userLabel = [user.nombre_usuario, ROL_LABEL[user.rol], user.hospital_nombre].filter(Boolean).join(" · ");
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950">
-      {/* Banner persistente de gobernanza (DECISION_SPEC §1) */}
-      <div className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-center text-xs font-medium text-amber-950 dark:border-amber-800/80 dark:bg-amber-950/60 dark:text-amber-200">
-        <span className="inline-flex items-center gap-2">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-          <strong>TraumaNet apoya la decisión; no decide.</strong> El regulador médico confirma el traslado. Datos operativos y clínicos 100 % sintéticos.
-        </span>
-      </div>
+    <div className="flex min-h-screen flex-col bg-app">
+      <a
+        href="#contenido"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-surface focus:px-3 focus:py-2 focus:text-sm"
+      >
+        Saltar al contenido
+      </a>
+      <header className="sticky top-0 z-30 bg-brand">
+        <nav
+          aria-label="Principal"
+          className={cx("flex h-14 items-center gap-4 overflow-x-auto px-4 sm:px-6", !isParamedico && "lg:gap-8")}
+        >
+          <Link href="/" className="flex shrink-0 items-center gap-2 rounded-sm">
+            <Logo className={isParamedico ? "max-sm:hidden" : undefined} />
+            <span className="font-cond text-xl font-semibold leading-[26px] text-white">TraumaNet</span>
+          </Link>
 
-      {/* Barra superior */}
-      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <div className="flex items-center gap-6">
-            <Link href="/" className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-600 text-white shadow-sm">
-                <Activity className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
-                  TraumaNet
-                </div>
-                <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Corredor Tuxtla – San Cristóbal – Comitán
-                </div>
-              </div>
-            </Link>
-
-            <nav className="flex flex-wrap items-center gap-1">
-              {NAV_ITEMS.filter((item) => item.roles.includes(user.rol)).map((item) => {
-                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                const Icon = item.icon;
+          {isParamedico ? (
+            <span className="min-w-0 truncate text-sm text-on-nav max-sm:ml-auto max-sm:text-xs" title={userLabel}>
+              {user.nombre_usuario}
+              <span className="max-sm:hidden"> · {ROL_LABEL[user.rol]}</span>
+            </span>
+          ) : (
+            <ul className="flex h-full shrink-0 items-stretch gap-1">
+              {tabs.map((t) => {
+                const active = pathname === t.href || pathname.startsWith(`${t.href}/`);
                 return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                      active
-                        ? "bg-cyan-600 text-white shadow-sm"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {item.label}
-                  </Link>
+                  <li key={t.href} className="flex">
+                    <Link
+                      href={t.href}
+                      aria-current={active ? "page" : undefined}
+                      className={cx(
+                        "flex items-center whitespace-nowrap border-b-[3px] px-4 text-sm",
+                        active
+                          ? "border-accent font-semibold text-white"
+                          : "border-transparent text-on-nav hover:text-white"
+                      )}
+                    >
+                      {t.label}
+                    </Link>
+                  </li>
                 );
               })}
-            </nav>
-          </div>
+            </ul>
+          )}
 
-          <div className="flex items-center gap-2.5">
-            {health && (
-              <div
-                title="Conectividad en vivo reportada por FastAPI /api/v1/health"
-                className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-mono dark:border-slate-700 dark:bg-slate-800"
-              >
-                <Database className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-400" />
-                <span className={health.engines.postgresql === "up" ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}>
-                  PG
-                </span>
-                ·
-                <span className={health.engines.mongodb === "up" ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}>
-                  Mongo
-                </span>
-                ·
-                <span className={health.engines.neo4j === "up" ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}>
-                  Neo4j
-                </span>
-              </div>
+          <div className="flex-1" />
+
+          <div className="flex shrink-0 items-center gap-4">
+            {!isParamedico && (
+              <span className="max-w-[360px] truncate text-xs text-on-nav" title={userLabel}>
+                {userLabel}
+              </span>
             )}
-
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-right dark:border-slate-700 dark:bg-slate-800">
-              <div className="text-xs font-semibold text-slate-900 dark:text-white">
-                {user.nombre_usuario}
-              </div>
-              <div className="text-[11px] font-medium text-cyan-700 dark:text-cyan-400">
-                {user.rol}
-                {user.hospital_id ? ` · HOSP-0${user.hospital_id}` : ""}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={toggleDarkMode}
-              aria-label="Cambiar tema claro/oscuro"
-              className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                logout();
-                router.replace("/login");
-              }}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-red-50 hover:border-red-300 hover:text-red-700 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-red-950/60 dark:hover:text-red-300"
-            >
-              <LogOut className="h-3.5 w-3.5" />
+            {isParamedico && pathname !== "/despacho" && (
+              <Link href="/despacho" className="whitespace-nowrap text-sm text-on-nav hover:text-white max-sm:hidden">
+                Nueva evaluación
+              </Link>
+            )}
+            <button type="button" onClick={logout} className="rounded-sm text-sm font-semibold text-white hover:underline">
               Salir
             </button>
           </div>
-        </div>
+        </nav>
       </header>
-
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">
-        {forbidden ? (
-          <div className="rounded-xl border border-red-300 bg-red-50 p-6 text-red-900 dark:border-red-800 dark:bg-red-950/50 dark:text-red-200">
-            <h2 className="text-lg font-bold">Acceso restringido por rol</h2>
-            <p className="mt-1 text-sm">
-              Tu sesión actual tiene rol <strong>{user.rol}</strong> y esta vista está reservada para:{" "}
-              <strong>{allowedRoles?.join(", ")}</strong>.
-            </p>
-          </div>
-        ) : (
-          children
-        )}
+      <main id="contenido" className={cx("flex-1", narrow && "w-full")}>
+        {children}
       </main>
     </div>
   );

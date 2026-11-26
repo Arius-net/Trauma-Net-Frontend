@@ -2,15 +2,82 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  html {
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-  }
-  body {
-    @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
-  }
+:root {
+  /* Paleta Modern Blue */
+  --color-brand: #0a2463;
+  --color-accent: #3e92cc;
+  --color-bg-app: #fffaff;
+  --color-bg-surface: #ffffff;
+  --color-bg-subtle: #f4f5fa;
+  --color-bg-selected: #eaf3fa;
+  --color-text-link: #1d5f94;
+  --color-text-on-nav: #d9dfef;
+
+  /* Neutros con tinte azul */
+  --n-50: #f4f5fa;
+  --n-100: #e9ecf4;
+  --n-200: #d7dce8;
+  --n-300: #bac2d3;
+  --n-400: #8d98b0;
+  --n-500: #667189;
+  --n-600: #4d586f;
+  --n-700: #353f57;
+  --n-800: #212a40;
+  --n-900: #121a2e;
+
+  /* Triage: único color semántico */
+  --triage-rojo: #d92d20;
+  --triage-amarillo: #b54708;
+  --triage-verde: #027a48;
+  --triage-negro: #0e1630;
+
+  /* Validación de campos */
+  --color-error: #d92d20;
 }
 
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
+html,
+body {
+  background: var(--color-bg-app);
+  color: var(--n-900);
+}
+
+body {
+  font-family: var(--font-plex-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Foco visible con el acento azul en todos los controles */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+@keyframes tn-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.tn-skeleton {
+  background: var(--n-100);
+  border-radius: 2px;
+  animation: tn-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tn-skeleton {
+    animation: none;
+  }
 }
